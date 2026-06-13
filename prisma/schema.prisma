@@ -1,0 +1,344 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Role {
+  ADMIN
+  MANAGER
+  REGIONAL_HEAD
+  EXECUTIVE_MANAGER
+  FIELD_WORKER
+}
+
+enum CertificationStatus {
+  CONVENTIONAL
+  TRANSITIONING
+  CERTIFIED_ORGANIC
+}
+
+enum QualityGrade {
+  A
+  B
+  C
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+}
+
+enum FarmerStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+// ============================================
+// USERS
+// ============================================
+
+model User {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?  @unique
+  phone       String   @unique
+  password    String
+  role        Role
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  regionId    String?
+  region      Region?  @relation("RegionUsers", fields: [regionId], references: [id])
+
+  villageId   String?
+  village     Village? @relation("VillageUsers", fields: [villageId], references: [id])
+
+  createdById String?
+  createdBy   User?    @relation("UserCreatedBy", fields: [createdById], references: [id])
+  createdUsers User[]  @relation("UserCreatedBy")
+
+  // Reverse relations
+  headOfRegion      Region[]   @relation("RegionHead")
+  managedVillage    Village[]  @relation("VillageManager")
+  enrolledFarmers   Farmer[]   @relation("FarmerEnrolledBy")
+  deliveriesReceived ProduceDelivery[] @relation("DeliveryReceivedBy")
+  paymentsMade      Payment[]  @relation("PaymentMadeBy")
+  paymentsApproved  Payment[]  @relation("PaymentApprovedBy")
+  invitesSent       Invite[]   @relation("InviteCreatedBy")
+  auditLogs         AuditLog[]
+  fieldVisits       FieldVisit[]
+}
+
+// ============================================
+// REGIONS
+// ============================================
+
+model Region {
+  id          String   @id @default(cuid())
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Head of this region
+  headId      String?
+  head        User?    @relation("RegionHead", fields: [headId], references: [id])
+
+  // All users in this region
+  users       User[]   @relation("RegionUsers")
+  villages    Village[]
+}
+
+// ============================================
+// VILLAGES
+// ============================================
+
+model Village {
+  id          String   @id @default(cuid())
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Region this village belongs to
+  regionId    String
+  region      Region   @relation(fields: [regionId], references: [id])
+
+  // Executive Manager of this village
+  managerId   String?
+  manager     User?    @relation("VillageManager", fields: [managerId], references: [id])
+
+  // Users in this village
+  users       User[]   @relation("VillageUsers")
+
+  store       Store?
+  farmers     Farmer[]
+}
+
+// ============================================
+// STORES
+// ============================================
+
+model Store {
+  id              String   @id @default(cuid())
+  name            String
+  locationLat     Float?
+  locationLng     Float?
+  capacityKg      Float?
+  hasColdStorage  Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  villageId       String   @unique
+  village         Village  @relation(fields: [villageId], references: [id])
+
+  deliveries      ProduceDelivery[]
+  expenses        StoreExpense[]
+}
+
+// ============================================
+// FARMERS
+// ============================================
+
+model Farmer {
+  id                  String          @id @default(cuid())
+  name                String
+  aadhaarHash         String?         @unique
+  phone               String
+  address             String?
+  acres               Float?
+  surveyNumber        String?
+  soilType            String?
+  locationLat         Float?
+  locationLng         Float?
+  certificationStatus CertificationStatus @default(CONVENTIONAL)
+  certificationNumber String?
+  certificationExpiry DateTime?
+  status              FarmerStatus    @default(ACTIVE)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  villageId           String
+  village             Village         @relation(fields: [villageId], references: [id])
+
+  enrolledById        String
+  enrolledBy          User            @relation("FarmerEnrolledBy", fields: [enrolledById], references: [id])
+
+  crops               FarmerCrop[]
+  deliveries          ProduceDelivery[]
+  payments            Payment[]
+  documents           FarmerDocument[]
+  fieldVisits         FieldVisit[]
+}
+
+// ============================================
+// FARMER CROPS
+// ============================================
+
+model FarmerCrop {
+  id        String   @id @default(cuid())
+  cropName  String
+  season    String
+  year      Int
+  acres     Float?
+  createdAt DateTime @default(now())
+
+  farmerId  String
+  farmer    Farmer   @relation(fields: [farmerId], references: [id])
+}
+
+// ============================================
+// FARMER DOCUMENTS
+// ============================================
+
+model FarmerDocument {
+  id           String   @id @default(cuid())
+  documentType String   // land_record, organic_certificate, identity_proof
+  fileUrl      String
+  uploadedAt   DateTime @default(now())
+
+  farmerId     String
+  farmer       Farmer   @relation(fields: [farmerId], references: [id])
+}
+
+// ============================================
+// FIELD VISITS
+// ============================================
+
+model FieldVisit {
+  id          String   @id @default(cuid())
+  notes       String?
+  visitedAt   DateTime @default(now())
+
+  farmerId    String
+  farmer      Farmer   @relation(fields: [farmerId], references: [id])
+
+  visitedById String
+  visitedBy   User     @relation(fields: [visitedById], references: [id])
+}
+
+// ============================================
+// PRODUCE DELIVERIES
+// ============================================
+
+model ProduceDelivery {
+  id           String       @id @default(cuid())
+  cropType     String
+  quantityKg   Float
+  qualityGrade QualityGrade
+  pricePerKg   Float
+  totalAmount  Float
+  isRejected   Boolean      @default(false)
+  rejectReason String?
+  deliveredAt  DateTime     @default(now())
+  createdAt    DateTime     @default(now())
+
+  storeId      String
+  store        Store        @relation(fields: [storeId], references: [id])
+
+  farmerId     String
+  farmer       Farmer       @relation(fields: [farmerId], references: [id])
+
+  receivedById String
+  receivedBy   User         @relation("DeliveryReceivedBy", fields: [receivedById], references: [id])
+}
+
+// ============================================
+// PAYMENTS
+// ============================================
+
+model Payment {
+  id          String        @id @default(cuid())
+  amount      Float
+  mode        PaymentMode
+  reference   String?
+  status      PaymentStatus @default(PENDING)
+  notes       String?
+  paidAt      DateTime?
+  createdAt   DateTime      @default(now())
+
+  farmerId    String
+  farmer      Farmer        @relation(fields: [farmerId], references: [id])
+
+  paidById    String
+  paidBy      User          @relation("PaymentMadeBy", fields: [paidById], references: [id])
+
+  approvedById String?
+  approvedBy   User?        @relation("PaymentApprovedBy", fields: [approvedById], references: [id])
+}
+
+// ============================================
+// STORE EXPENSES
+// ============================================
+
+model StoreExpense {
+  id          String   @id @default(cuid())
+  description String
+  amount      Float
+  category    String   // utilities, labor, maintenance, other
+  expenseDate DateTime
+  createdAt   DateTime @default(now())
+
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id])
+}
+
+// ============================================
+// INVITES
+// ============================================
+
+model Invite {
+  id               String       @id @default(cuid())
+  email            String?
+  phone            String
+  role             Role
+  status           InviteStatus @default(PENDING)
+  token            String       @unique @default(cuid())
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  assignedRegionId String?
+  assignedVillageId String?
+  createdAt        DateTime     @default(now())
+
+  createdById      String
+  createdBy        User         @relation("InviteCreatedBy", fields: [createdById], references: [id])
+}
+
+// ============================================
+// AUDIT LOGS
+// ============================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String   // CREATE, UPDATE, DELETE, LOGIN, LOGOUT
+  entityType String   // User, Farmer, Payment, etc.
+  entityId   String?
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+}
